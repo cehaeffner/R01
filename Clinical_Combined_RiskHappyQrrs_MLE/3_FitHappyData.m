@@ -17,6 +17,9 @@ for s = 1:height(combinedriskhappydata)
     combinedriskhappydata.r2_evrpe{s} = result_evrpe.r2;
 end
 
+% Add model-free happiness
+combinedriskhappydata.meanRawHappy = cellfun(@(r) mean(r.rawhappy), combinedriskhappydata.result_evrpe, 'UniformOutput', false);
+
 % Save as .mat file
 save('fitcombinedRiskHappyData_all.mat', "combinedriskhappydata") %change
 

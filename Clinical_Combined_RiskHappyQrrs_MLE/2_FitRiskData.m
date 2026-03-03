@@ -19,6 +19,8 @@ end
 
 % Add model-free data
 combinedriskdata.pGamble = cellfun(@(x) mean(x(:,6)), combinedriskdata.gameDataStacked);
+combinedriskdata.pGamGain = cellfun(@(x) mean(x(x(:,3)>0,6)), combinedriskdata.gameDataStacked);
+combinedriskdata.pGamMix = cellfun(@(x) mean(x(x(:,3)==0,6)), combinedriskdata.gameDataStacked);
 
 % Save as .mat
 save('fitcombinedRiskData_all.mat', "combinedriskdata") % change
@@ -29,6 +31,32 @@ figure;
 scatter(B(:,3), combinedriskdata.pGamble, 20, 'filled');
 xlabel('alpha'); ylabel('pGamble');
 [r,p] = corr(B(:,3), combinedriskdata.pGamble);
+title(sprintf('r=%.2f, p=%.3f', r, p));
+box off; axis square;
+
+figure;
+scatter(B(:,3), combinedriskdata.pGamGain, 20, 'filled');
+xlabel('alpha'); ylabel('pGambleGain');
+[r,p] = corr(B(:,3), combinedriskdata.pGamGain);
+title(sprintf('r=%.2f, p=%.3f', r, p));
+box off; axis square;
+
+figure;
+scatter(B(:,3), combinedriskdata.pGamMix, 20, 'filled');
+xlabel('alpha'); ylabel('pGambleMix');
+[r,p] = corr(B(:,3), combinedriskdata.pGamMix);
+title(sprintf('r=%.2f, p=%.3f', r, p));
+box off; axis square;
+
+mean(combinedriskdata.pGamble); % 60%
+mean(combinedriskdata.pGamGain); % 77%
+mean(combinedriskdata.pGamMix); % 40
+
+%% Sanity check: lambda v pGamLoss
+figure;
+scatter(B(:,2), combinedriskdata.pGamLoss, 20, 'filled');
+xlabel('lambda'); ylabel('pGambleLoss');
+[r,p] = corr(B(:,2), combinedriskdata.pGamLoss);
 title(sprintf('r=%.2f, p=%.3f', r, p));
 box off; axis square;
 
@@ -45,6 +73,7 @@ for p = 1:3
 end
 sgtitle('PT Model: Parameter distributions');
 
+% Oddly high alphas... mean 1.3... not dirven by just low r2 people
 %% Sanity check: pR2 distribution
 figure('Color', 'w');
 pr2_numeric = cell2mat(combinedriskdata.pr2_pt);
@@ -86,52 +115,70 @@ xlabel('SV difference (gain - loss)'); ylabel('P(gamble)'); title('Choice by SV 
 axis square;
 
 %% Sanity check: P(gamble) by lottery EV, split by trial type and alpha group
-B       = cell2mat(combinedriskdata.b_pt);
-alphas  = B(:, 3);
-edges_a = quantile(alphas, [0 1/3 2/3 1]);
-alphaGroup = discretize(alphas, edges_a, 'IncludedEdge', 'right');
-
-groupLabels = {sprintf('Low alpha (<%.2f)',     edges_a(2)), ...
-               sprintf('Mid alpha (%.2f-%.2f)', edges_a(2), edges_a(3)), ...
-               sprintf('High alpha (>%.2f)',    edges_a(3))};
-colors      = {[0.8 0.2 0.2], [0.2 0.6 0.2], [0.2 0.2 0.8]};
-
-getType    = @(t) (t(:,5) == 0) .* 1 + ...
-                  (t(:,4) ~= 0 & t(:,5) ~= 0) .* 2;
+getType = @(t) (t(:,3) > 0) .* 1 + (t(:,3) == 0) .* 2;
 typeLabels = {'Gain only', 'Mixed'};
-
-figure('Position', [100 100 800 450]);
-
-for tt = 1:2        % <-- was 1:3
-    subplot(1, 2, tt); hold on;
-
-    for g = 1:3     % <-- was 1:2
-        idx    = find(alphaGroup == g);
-        all_ev = []; all_ch = [];
-
-        for s = 1:numel(idx)
-            t     = combinedriskdata.gameDataStacked{idx(s)};
-            types = getType(t);
-            rows  = types == tt;
-            if sum(rows) == 0, continue; end
-            all_ev = [all_ev; t(rows,4)*0.5 + t(rows,5)*0.5];
-            all_ch = [all_ch; t(rows,6)];
-        end
-
-        if isempty(all_ev), continue; end
-        edges  = quantile(all_ev, linspace(0,1,9));
-        binIdx = discretize(all_ev, edges);
-        pCh    = arrayfun(@(b) mean(all_ch(binIdx==b)), 1:8);
-        binC   = arrayfun(@(b) mean(all_ev(binIdx==b)), 1:8);
-        plot(binC, pCh, 'o-', 'Color', colors{g}, 'LineWidth', 2, ...
-             'MarkerFaceColor', colors{g}, 'DisplayName', groupLabels{g});
+figure;
+for tt = 1:2
+    subplot(1,2,tt);
+    all_evdiff = []; all_ch = [];
+    for s = 1:height(combinedriskdata)
+        t = combinedriskdata.gameDataStacked{s};
+        rows = getType(t) == tt;
+        ev      = t(rows,4)*0.5 + t(rows,5)*0.5;
+        ev_diff = ev - t(rows,3);
+        all_evdiff = [all_evdiff; ev_diff];
+        all_ch     = [all_ch;     t(rows,6)];
     end
-
-    yline(0.5, 'k--'); xlabel('Lottery EV'); ylabel('P(gamble)');
-    title(typeLabels{tt}); legend('Location', 'best');
-    ylim([0 1]); box off; axis square;
+    edges  = quantile(all_evdiff, linspace(0,1,9));
+    binIdx = discretize(all_evdiff, edges);
+    pCh  = arrayfun(@(b) mean(all_ch(binIdx==b)), 1:8);
+    binC = arrayfun(@(b) mean(all_evdiff(binIdx==b)), 1:8);
+    plot(binC, pCh, 'o-');
+    xline(0, 'k--');
+    xlabel('EV difference'); ylabel('P(gamble)'); title(typeLabels{tt});
 end
-sgtitle('P(gamble) by lottery EV and alpha group');
+
+% The drop in gambling at the highest EV bin for mixed is weird
+
+% Gamble by ratio in mixed
+all_ratio = []; all_ch = [];
+for s = 1:height(combinedriskdata)
+    t = combinedriskdata.gameDataStacked{s};
+    rows = t(:,5) ~= 0;
+    ratio = t(rows,4) ./ abs(t(rows,5));
+    all_ratio = [all_ratio; ratio];
+    all_ch    = [all_ch;    t(rows,6)];
+end
+edges  = quantile(all_ratio, linspace(0,1,9));
+binIdx = discretize(all_ratio, edges);
+pCh  = arrayfun(@(b) mean(all_ch(binIdx==b)), 1:8);
+binC = arrayfun(@(b) mean(all_ratio(binIdx==b)), 1:8);
+figure;
+plot(binC, pCh, 'o-');
+xline(1, 'k--');
+xlabel('Gain / |Loss|'); ylabel('P(gamble)'); title('Mixed trials');
+
+% Gambling ratio for gain values in mixed are 50 and 80
+figure;
+for g = 1:2
+    gain_val = [50 80];
+    subplot(1,2,g);
+    all_ratio = []; all_ch = [];
+    for s = 1:height(combinedriskdata)
+        t = combinedriskdata.gameDataStacked{s};
+        rows = t(:,4) == gain_val(g);
+        ratio = t(rows,4) ./ abs(t(rows,5));
+        all_ratio = [all_ratio; ratio];
+        all_ch    = [all_ch;    t(rows,6)];
+    end
+    edges  = quantile(all_ratio, linspace(0,1,9));
+    binIdx = discretize(all_ratio, edges);
+    pCh  = arrayfun(@(b) mean(all_ch(binIdx==b)), 1:8);
+    binC = arrayfun(@(b) mean(all_ratio(binIdx==b)), 1:8);
+    plot(binC, pCh, 'o-');
+    xline(1, 'k--');
+    xlabel('Gain / |Loss|'); ylabel('P(gamble)'); title(sprintf('Gain = %d', gain_val(g)));
+end
 
 %% Single subject: raw choices by safe value and lottery EV
 s = 300; % change subject index
@@ -331,5 +378,49 @@ plot(ev_sorted, ch_sorted, 'ro-', 'LineWidth', 1.5, 'MarkerFaceColor', 'r');
 yline(0.5, 'k--');
 xlabel('Lottery EV'); ylabel('Choice (0=safe, 1=gamble)');
 title('Mixed'); ylim([-0.1 1.1]); yticks([0 1]); box off;
+
+sgtitle(sprintf('Subject %d | alpha=%.2f, lambda=%.2f, R²=%.2f', s, alpha, lambda, r2));
+
+
+%% Plot single subject for b_pt
+% Find high alpha + high lambda subject
+B = cell2mat(combinedriskdata.b_pt);
+alphas  = B(:,3);
+lambdas = B(:,2);
+high_both = find(alphas > quantile(alphas, 2/3) & lambdas > quantile(lambdas, 2/3));
+[~, idx] = sortrows([alphas(high_both), lambdas(high_both)], [-1 -2]);
+s = high_both(idx(1));
+
+% Plot single subject
+t      = combinedriskdata.gameDataStacked{s};
+B_s    = combinedriskdata.b_pt{s};
+alpha  = B_s(3);
+lambda = B_s(2);
+r2     = combinedriskdata.pr2_pt{s};
+
+gainRows    = t(:,5) == 0;
+mixRows     = t(:,4) ~= 0 & t(:,5) ~= 0;
+
+gain_evdiff = t(gainRows,4)*0.5 - t(gainRows,3);
+gain_choice = t(gainRows,6);
+mix_evdiff  = t(mixRows,4)*0.5 + t(mixRows,5)*0.5 - t(mixRows,3);
+mix_choice  = t(mixRows,6);
+
+figure('Position', [100 100 800 400]);
+tiledlayout(1, 2, 'TileSpacing', 'compact');
+
+nexttile; hold on;
+[ev_sorted, order] = sort(gain_evdiff);
+plot(ev_sorted, gain_choice(order), 'ko-', 'LineWidth', 1.5, 'MarkerFaceColor', 'k');
+yline(0.5, 'k--'); xline(0, 'b--');
+xlabel('EV - safe'); ylabel('Choice'); title('Gain only');
+ylim([-0.1 1.1]); yticks([0 1]); box off;
+
+nexttile; hold on;
+[ev_sorted, order] = sort(mix_evdiff);
+plot(ev_sorted, mix_choice(order), 'ro-', 'LineWidth', 1.5, 'MarkerFaceColor', 'r');
+yline(0.5, 'k--'); xline(0, 'b--');
+xlabel('EV - safe'); ylabel('Choice'); title('Mixed');
+ylim([-0.1 1.1]); yticks([0 1]); box off;
 
 sgtitle(sprintf('Subject %d | alpha=%.2f, lambda=%.2f, R²=%.2f', s, alpha, lambda, r2));

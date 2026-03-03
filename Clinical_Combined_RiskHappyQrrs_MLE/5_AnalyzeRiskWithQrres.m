@@ -173,6 +173,17 @@ staterisk.negemoGroup = categorical(staterisk.mean_negemoscore > negemoMedian, [
 % 209/202 per group for worried (low/high)
 % 165/246 per group for mental health (low/high)
 
+scales = {
+    masqbamirisk, 'masqGroup',         'MASQ';
+    masqbamirisk, 'bamiGroup',         'BAMI';
+    phq9gad7risk, 'phq9Group',         'PHQ9';
+    phq9gad7risk, 'gad7Group',         'GAD7';
+    staterisk,    'worriedGroup',      'Worry';
+    staterisk,    'posemoGroup',       'PosEmo';
+    staterisk,    'negemoGroup',       'NegEmo';
+    staterisk,    'mentalhealthGroup', 'MentalHealth'
+};
+
 %% Median split symptom levels 
 
 for p = 1:length(params)
@@ -220,3 +231,149 @@ end
 %ylabel('Mean ± SEM');
 %title('lambda by MASQ group');
 %hold off;
+
+%% Median split symptom levels prep - MONTHLY
+fitcombinedriskdata_monthly.mu = cellfun(@(x) x(1), fitcombinedriskdata_monthly.b_pt);
+fitcombinedriskdata_monthly.lambda = cellfun(@(x) x(2), fitcombinedriskdata_monthly.b_pt);
+fitcombinedriskdata_monthly.alpha = cellfun(@(x) x(3), fitcombinedriskdata_monthly.b_pt);
+masqbamirisk_monthly = innerjoin(fitcombinedriskdata_monthly, combinedmasqbami_all, 'Keys', 'redcapID');
+phq9gad7risk_monthly = innerjoin(fitcombinedriskdata_monthly, combinedphq9gad7_all, 'Keys', 'redcapID');
+staterisk_monthly    = innerjoin(fitcombinedriskdata_monthly, combinedstate_all, 'Keys', 'redcapID');
+
+masqMedian_monthly         = median(masqbamirisk_monthly.mean_masqscore);
+bamiMedian_monthly         = median(masqbamirisk_monthly.mean_bamiscore);
+phq9Median_monthly         = median(phq9gad7risk_monthly.mean_phq9score);
+gad7Median_monthly         = median(phq9gad7risk_monthly.mean_gad7score);
+worriedMedian_monthly      = median(staterisk_monthly.mean_worriedscore);
+mentalhealthMedian_monthly = median(staterisk_monthly.mean_mentalhealthscore);
+posemoMedian_monthly       = median(staterisk_monthly.mean_posemoscore);
+negemoMedian_monthly       = median(staterisk_monthly.mean_negemoscore);
+
+masqbamirisk_monthly.masqGroup         = categorical(masqbamirisk_monthly.mean_masqscore > masqMedian_monthly, [0 1], {'low', 'high'});
+masqbamirisk_monthly.bamiGroup         = categorical(masqbamirisk_monthly.mean_bamiscore > bamiMedian_monthly, [0 1], {'low', 'high'});
+phq9gad7risk_monthly.phq9Group         = categorical(phq9gad7risk_monthly.mean_phq9score > phq9Median_monthly, [0 1], {'low', 'high'});
+phq9gad7risk_monthly.gad7Group         = categorical(phq9gad7risk_monthly.mean_gad7score > gad7Median_monthly, [0 1], {'low', 'high'});
+staterisk_monthly.mentalhealthGroup    = categorical(staterisk_monthly.mean_mentalhealthscore > mentalhealthMedian_monthly, [0 1], {'low', 'high'});
+staterisk_monthly.worriedGroup         = categorical(staterisk_monthly.mean_worriedscore > worriedMedian_monthly, [0 1], {'low', 'high'});
+staterisk_monthly.posemoGroup          = categorical(staterisk_monthly.mean_posemoscore > posemoMedian_monthly, [0 1], {'low', 'high'});
+staterisk_monthly.negemoGroup          = categorical(staterisk_monthly.mean_negemoscore > negemoMedian_monthly, [0 1], {'low', 'high'});
+
+scales_monthly = {
+    masqbamirisk_monthly, 'masqGroup',         'MASQ';
+    masqbamirisk_monthly, 'bamiGroup',         'BAMI';
+    phq9gad7risk_monthly, 'phq9Group',         'PHQ9';
+    phq9gad7risk_monthly, 'gad7Group',         'GAD7';
+    staterisk_monthly,    'worriedGroup',      'Worry';
+    staterisk_monthly,    'posemoGroup',       'PosEmo';
+    staterisk_monthly,    'negemoGroup',       'NegEmo';
+    staterisk_monthly,    'mentalhealthGroup', 'MentalHealth'
+};
+
+%% Median split symptom levels - MONTHLY
+for p = 1:length(params)
+    figure;
+    allMeans = zeros(2, size(scales_monthly,1));
+    allSEMs  = zeros(2, size(scales_monthly,1));
+
+    for s = 1:size(scales_monthly,1)
+        tbl = scales_monthly{s,1};
+        grp = scales_monthly{s,2};
+        stats = grpstats(tbl(:, {params{p}, grp}), grp, {'mean','sem'});
+        allMeans(:,s) = stats.(['mean_' params{p}]);
+        allSEMs(:,s)  = stats.(['sem_' params{p}]);
+
+        lowData  = tbl.(params{p})(tbl.(grp) == 'low');
+        highData = tbl.(params{p})(tbl.(grp) == 'high');
+        [~, pval, ~, tstat] = ttest2(lowData, highData);
+        fprintf('[MONTHLY] %s | %s: t(%.0f) = %.3f, p = %.3f\n', params{p}, scales_monthly{s,3}, tstat.df, tstat.tstat, pval);
+    end
+
+    bar(allMeans');
+    hold on;
+    nGroups = size(allMeans,2);
+    groupWidth = min(0.8, 2/(2+1.5));
+    for g = 1:2
+        x = (1:nGroups) - groupWidth/2 + (2*g-1)*groupWidth/4;
+        errorbar(x, allMeans(g,:), allSEMs(g,:), 'k', 'LineStyle','none');
+    end
+    xticklabels(scales_monthly(:,3));
+    xtickangle(45);
+    legend({'low','high'});
+    title(['[Monthly] ' params{p}]);
+    ylabel('Parameter Value');
+    hold off;
+end
+
+
+%% Median split symptom levels prep - DENSE
+fitcombinedriskdata_dense.mu = cellfun(@(x) x(1), fitcombinedriskdata_dense.b_pt);
+fitcombinedriskdata_dense.lambda = cellfun(@(x) x(2), fitcombinedriskdata_dense.b_pt);
+fitcombinedriskdata_dense.alpha = cellfun(@(x) x(3), fitcombinedriskdata_dense.b_pt);
+
+masqbamirisk_dense = innerjoin(fitcombinedriskdata_dense, combinedmasqbami_all, 'Keys', 'redcapID');
+phq9gad7risk_dense = innerjoin(fitcombinedriskdata_dense, combinedphq9gad7_all, 'Keys', 'redcapID');
+staterisk_dense    = innerjoin(fitcombinedriskdata_dense, combinedstate_all, 'Keys', 'redcapID');
+
+masqMedian_dense         = median(masqbamirisk_dense.mean_masqscore);
+bamiMedian_dense         = median(masqbamirisk_dense.mean_bamiscore);
+phq9Median_dense         = median(phq9gad7risk_dense.mean_phq9score);
+gad7Median_dense         = median(phq9gad7risk_dense.mean_gad7score);
+worriedMedian_dense      = median(staterisk_dense.mean_worriedscore);
+mentalhealthMedian_dense = median(staterisk_dense.mean_mentalhealthscore);
+posemoMedian_dense       = median(staterisk_dense.mean_posemoscore);
+negemoMedian_dense       = median(staterisk_dense.mean_negemoscore);
+
+masqbamirisk_dense.masqGroup         = categorical(masqbamirisk_dense.mean_masqscore > masqMedian_dense, [0 1], {'low', 'high'});
+masqbamirisk_dense.bamiGroup         = categorical(masqbamirisk_dense.mean_bamiscore > bamiMedian_dense, [0 1], {'low', 'high'});
+phq9gad7risk_dense.phq9Group         = categorical(phq9gad7risk_dense.mean_phq9score > phq9Median_dense, [0 1], {'low', 'high'});
+phq9gad7risk_dense.gad7Group         = categorical(phq9gad7risk_dense.mean_gad7score > gad7Median_dense, [0 1], {'low', 'high'});
+staterisk_dense.mentalhealthGroup    = categorical(staterisk_dense.mean_mentalhealthscore > mentalhealthMedian_dense, [0 1], {'low', 'high'});
+staterisk_dense.worriedGroup         = categorical(staterisk_dense.mean_worriedscore > worriedMedian_dense, [0 1], {'low', 'high'});
+staterisk_dense.posemoGroup          = categorical(staterisk_dense.mean_posemoscore > posemoMedian_dense, [0 1], {'low', 'high'});
+staterisk_dense.negemoGroup          = categorical(staterisk_dense.mean_negemoscore > negemoMedian_dense, [0 1], {'low', 'high'});
+
+scales_dense = {
+    masqbamirisk_dense, 'masqGroup',         'MASQ';
+    masqbamirisk_dense, 'bamiGroup',         'BAMI';
+    phq9gad7risk_dense, 'phq9Group',         'PHQ9';
+    phq9gad7risk_dense, 'gad7Group',         'GAD7';
+    staterisk_dense,    'worriedGroup',      'Worry';
+    staterisk_dense,    'posemoGroup',       'PosEmo';
+    staterisk_dense,    'negemoGroup',       'NegEmo';
+    staterisk_dense,    'mentalhealthGroup', 'MentalHealth'
+};
+
+%% Median split symptom levels - DENSE
+for p = 1:length(params)
+    figure;
+    allMeans = zeros(2, size(scales_dense,1));
+    allSEMs  = zeros(2, size(scales_dense,1));
+
+    for s = 1:size(scales_dense,1)
+        tbl = scales_dense{s,1};
+        grp = scales_dense{s,2};
+        stats = grpstats(tbl(:, {params{p}, grp}), grp, {'mean','sem'});
+        allMeans(:,s) = stats.(['mean_' params{p}]);
+        allSEMs(:,s)  = stats.(['sem_' params{p}]);
+
+        lowData  = tbl.(params{p})(tbl.(grp) == 'low');
+        highData = tbl.(params{p})(tbl.(grp) == 'high');
+        [~, pval, ~, tstat] = ttest2(lowData, highData);
+        fprintf('[DENSE] %s | %s: t(%.0f) = %.3f, p = %.3f\n', params{p}, scales_dense{s,3}, tstat.df, tstat.tstat, pval);
+    end
+
+    bar(allMeans');
+    hold on;
+    nGroups = size(allMeans,2);
+    groupWidth = min(0.8, 2/(2+1.5));
+    for g = 1:2
+        x = (1:nGroups) - groupWidth/2 + (2*g-1)*groupWidth/4;
+        errorbar(x, allMeans(g,:), allSEMs(g,:), 'k', 'LineStyle','none');
+    end
+    xticklabels(scales_dense(:,3));
+    xtickangle(45);
+    legend({'low','high'});
+    title(['[Dense] ' params{p}]);
+    ylabel('Parameter Value');
+    hold off;
+end
